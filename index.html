@@ -1,0 +1,152 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Max 2 Controller</title>
+<style>
+body {
+  background:#111318;
+  color:white;
+  font-family:Arial,sans-serif;
+  padding:20px;
+  max-width:480px;
+  margin:auto;
+}
+h1 {text-align:center;color:#d58cff}
+.panel {
+  background:#20232c;
+  padding:18px;
+  border-radius:14px;
+  margin:15px 0;
+}
+input,button {
+  width:100%;
+  box-sizing:border-box;
+  padding:13px;
+  margin:8px 0;
+  border-radius:9px;
+  border:0;
+  font-size:16px;
+}
+button {background:#a34bd1;color:white;font-weight:bold}
+.stop {background:#d62d45;font-size:20px}
+input[type=range] {accent-color:#c46aff}
+.status {color:#aaa;text-align:center}
+</style>
+</head>
+<body>
+
+<h1>MAX 2 CONTROLLER</h1>
+<p class="status" id="status">Not connected</p>
+
+<div class="panel">
+<h3>Connection</h3>
+<label>Lovense LAN IP</label>
+<input id="ip" placeholder="Example: 192.168.1.100">
+<label>HTTPS Port</label>
+<input id="port" value="30010">
+<button onclick="connectToy()">CONNECT</button>
+<p id="device">No toy detected</p>
+</div>
+
+<div class="panel">
+<h3>Vibration</h3>
+<label>Intensity: <span id="level">1</span>/20</label>
+<input id="intensity" type="range" min="1" max="20" value="1"
+oninput="level.textContent=this.value">
+<button onclick="vibrate()">TEST VIBRATION (3 SECONDS)</button>
+<button class="stop" onclick="stopToy()">EMERGENCY STOP</button>
+</div>
+
+<script>
+let apiURL = "";
+let toyID = "";
+
+function setStatus(message) {
+  document.getElementById("status").textContent = message;
+}
+
+async function sendCommand(data) {
+  const response = await fetch(apiURL, {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "X-platform":"Max2Controller"
+    },
+    body:JSON.stringify(data)
+  });
+  if (!response.ok) throw new Error("HTTP " + response.status);
+  const result = await response.json();
+  if (result.code !== 200) throw new Error(JSON.stringify(result));
+  return result;
+}
+
+async function connectToy() {
+  try {
+    const ip = document.getElementById("ip").value.trim();
+    const port = document.getElementById("port").value.trim();
+
+    if (!ip || !/^[\d.]+$/.test(ip) || !port) {
+      throw new Error("Enter a valid LAN IP and port.");
+    }
+
+    const domain = ip.replace(/\./g,"-") + ".lovense.club";
+    apiURL = `https://${domain}:${port}/command`;
+
+    setStatus("Connecting...");
+    const result = await sendCommand({command:"GetToys"});
+
+    let toys = result.data?.toys || {};
+    if (typeof toys === "string") toys = JSON.parse(toys);
+
+    const entries = Object.entries(toys);
+    const max = entries.find(([id,t]) =>
+      String(t.name || "").toLowerCase().includes("max 2")
+    );
+
+    if (!max) throw new Error("Max 2 not found. Check Lovense Remote.");
+
+    toyID = max[0];
+    document.getElementById("device").textContent = "Connected: " + max[1].name;
+    setStatus("Connected successfully");
+  } catch(error) {
+    setStatus("Connection failed: " + error.message);
+  }
+}
+
+async function vibrate() {
+  if (!toyID) return alert("Connect your toy first.");
+  try {
+    await sendCommand({
+      command:"Function",
+      action:"Vibrate:" + document.getElementById("intensity").value,
+      timeSec:3,
+      toy:toyID,
+      apiVer:1
+    });
+    setStatus("Vibration command sent");
+  } catch(error) {
+    setStatus("Command failed: " + error.message);
+  }
+}
+
+async function stopToy() {
+  if (!apiURL || !toyID) return;
+  try {
+    await sendCommand({
+      command:"Function",
+      action:"Stop",
+      timeSec:0,
+      toy:toyID,
+      apiVer:1
+    });
+    setStatus("Stopped");
+  } catch(error) {
+    setStatus("Stop command failed: " + error.message);
+  }
+}
+</script>
+</body>
+</html>
